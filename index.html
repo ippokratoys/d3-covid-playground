@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+
+<head>
+  <meta charset="utf-8">
+  <!-- Load d3.js -->
+  <script src="https://d3js.org/d3.v4.js"></script>
+</head>
+
+<body>
+  <div class="slidecontainer">
+    <input type="range" min="1" max="100" value="60" class="slider" id="myRange" onchange="sliderChange()">
+  </div>
+
+  <h2>Vaccinated people percentage</h2>
+  <p>There are <strong id="numberOfCountries"></strong> countries with more than <strong id="vacinatedPercentageDisplay"></strong>% of people vaccinated</p>
+  <!-- Create a div where the graph will take place -->
+  <div id="my_dataviz"></div>
+</body>
+
+<script>
+  function getCurrentSlider() {
+    return document.getElementById("myRange").value;
+  }
+
+  function updateTexts(percentage, dataGrouped) {
+    document.getElementById("vacinatedPercentageDisplay").innerHTML = percentage;
+    document.getElementById("numberOfCountries").innerHTML = dataGrouped.length;
+  }
+
+  function clearGraphs() {
+    d3.select("#my_dataviz")
+      .selectAll("*")
+      .remove();
+  }
+
+  function sliderChange() {
+    renderGraphs();
+  }
+
+  // set the dimensions and margins of the graph
+  var margin = { top: 30, right: 0, bottom: 30, left: 50 },
+    width = 210 - margin.left - margin.right,
+    height = 210 - margin.top - margin.bottom;
+
+  //Read the data
+  function renderGraphs() {
+    clearGraphs();
+    var minimumPercentage = getCurrentSlider();
+    console.log("Minimum Percentage", minimumPercentage);
+    d3.csv("https://raw.githubusercontent.com/ippokratoys/d3-covid-playground/main/data/country_vaccinations.csv",
+      function (d) {
+        return {
+          date: d3.timeParse("%Y-%m-%d")(d.date),
+          value: d.people_vaccinated == "" ? null : parseFloat(d.people_vaccinated_per_hundred),
+          country: d.country
+        }
+      },
+      function (unparsedData) {
+        data = unparsedData.filter((el, index) =>
+          el.value != null
+        );
+
+        // group the data: I want to draw one line per group
+        var sumstat = d3.nest() // nest function allows to group the calculation per level of a factor
+          .key(function (d) { return d.country; })
+          .entries(data);
+
+        sumstat = sumstat.filter(el => el.values.some(entry => entry.value >= minimumPercentage));
+        dataGrouped = sumstat;
+        // What is the list of groups?
+        var allKeys = sumstat.map(function (d) { return d.key })
+
+        // Add an svg element for each group. The will be one beside each other and will go on the next row when no more room available
+        var svg = d3.select("#my_dataviz")
+          .selectAll("uniqueChart")
+          .data(sumstat)
+          .enter()
+          .append("svg")
+          .attr("width", width + margin.left + margin.right)
+          .attr("height", height + margin.top + margin.bottom)
+          .append("g")
+          .attr("transform",
+            "translate(" + margin.left + "," + margin.top + ")");
+
+        // Add X axis --> it is a date format
+        var x = d3.scaleTime()
+          .domain(d3.extent(data, function (d) { return d.date; }))
+          .range([0, width]);
+        svg
+          .append("g")
+          .attr("transform", "translate(0," + height + ")")
+          .call(d3.axisBottom(x).ticks(3));
+
+        //Add Y axis
+        var y = d3.scaleLinear()
+          .domain([0, 100])
+          .range([height, 0]);
+        svg.append("g")
+          .call(d3.axisLeft(y).ticks(5));
+
+        // color palette
+        var color = d3.scaleOrdinal()
+          .domain(allKeys)
+          .range(['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#a65628', '#f781bf', '#999999'])
+
+        // Draw the line
+        svg
+          .append("path")
+          .attr("fill", "none")
+          .attr("stroke", function (d) { return color(d.key) })
+          .attr("stroke-width", 1.9)
+          .attr("d", function (d) {
+            return d3.line()
+              .x(function (d) {
+                return x(d.date);
+              })
+              .y(function (d) {
+                return y(d.value);
+              })
+              (d.values)
+          })
+
+        // Add titles
+        svg
+          .append("text")
+          .attr("text-anchor", "start")
+          .attr("y", -5)
+          .attr("x", 0)
+          .text(function (d) { return (d.key) })
+          .style("fill", function (d) { return color(d.key) })
+        updateTexts(minimumPercentage, sumstat);
+      });
+  }
+  // render graphs the first time
+  renderGraphs();
+</script>
